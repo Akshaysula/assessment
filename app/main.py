@@ -1,6 +1,8 @@
+import hashlib
 import logging
+import secrets
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import httpx
@@ -89,6 +91,10 @@ class ScanCreate(BaseModel):
 class ScanUpdate(BaseModel):
     status: Optional[str] = None
     remediation_notes: Optional[str] = None
+
+    
+class ShareRequest(BaseModel):
+    password: Optional[str] = None
 
 
 class ScanOut(BaseModel):
@@ -270,6 +276,83 @@ def delete_scan(
         raise HTTPException(status_code=404, detail="Scan not found")
     db.delete(scan)
     db.commit()
+
+ # ---------------------------------------------------------------------------
+# Share routes
+# ---------------------------------------------------------------------------
+
+@app.post("/scans/{scan_id}/share", status_code=201)
+def create_share_link(
+    scan_id: int,
+    payload: ShareRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    scan = db.query(models.ScanResult).filter(
+        models.ScanResult.id == scan_id,
+        models.ScanResult.owner_id == current_user.id,
+    ).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+    hashed_pw = None
+    if payload.password:
+        hashed_pw = get_password_hash(payload.password)
+
+    share = models.ShareLink(
+        scan_id=scan_id,
+        token_hash=token_hash,
+        password_hash=hashed_pw,
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(share)
+    db.commit()
+
+    share_url = f"http://localhost:8000/share/{raw_token}"
+    return {"share_url": share_url}
+
+
+@app.get("/share/{token}")
+def access_shared_scan(
+    token: str,
+    password: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    share = db.query(models.ShareLink).filter(
+        models.ShareLink.token_hash == token_hash,
+    ).first()
+
+    invalid_msg = "Invalid or expired share link"
+
+    if not share:
+        raise HTTPException(status_code=404, detail=invalid_msg)
+    if datetime.utcnow() > share.expires_at:
+        raise HTTPException(status_code=404, detail=invalid_msg)
+    if share.password_hash:
+        if not password or not verify_password(password, share.password_hash):
+            raise HTTPException(status_code=404, detail=invalid_msg)
+
+    scan = db.query(models.ScanResult).filter(
+        models.ScanResult.id == share.scan_id,
+    ).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail=invalid_msg)
+
+    return {
+        "id": scan.id,
+        "title": scan.title,
+        "description": scan.description,
+        "severity": scan.severity,
+        "status": scan.status,
+        "cve_id": scan.cve_id,
+        "affected_component": scan.affected_component,
+        "remediation_notes": scan.remediation_notes,
+        "created_at": scan.created_at.isoformat(),
+    }   
 
 
 # ---------------------------------------------------------------------------

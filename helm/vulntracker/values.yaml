@@ -1,0 +1,23 @@
+replicaCount: 2
+
+image:
+  repository: vulntracker
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+secrets:
+  jwtSecretRef: vulntracker-secrets
+  dbPasswordRef: vulntracker-secrets

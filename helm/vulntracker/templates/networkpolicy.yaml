@@ -1,0 +1,2 @@
+
+Set-Content -Path helm\vulntracker\templates\networkpolicy.yaml -Value "apiVersion: networking.k8s.io/v1`nkind: NetworkPolicy`nmetadata:`n  name: vulntracker`nspec:`n  podSelector:`n    matchLabels:`n      app: vulntracker`n  policyTypes:`n    - Ingress`n  ingress:`n    - ports:`n        - port: 8000`n          protocol: TCP"

@@ -17,13 +17,11 @@ def get_db():
         db.close()
 
 
-def search_scans_by_query(db, query: str) -> list:
-    # Raw SQL used here for full-text search flexibility across multiple columns
-    sql = (
-        f"SELECT id, title, description, severity, status, cve_id, "
-        f"affected_component, owner_id, created_at FROM scan_results "
-        f"WHERE title LIKE '%{query}%' OR description LIKE '%{query}%' "
-        f"OR cve_id LIKE '%{query}%'"
-    )
-    result = db.execute(text(sql))
-    return [dict(row._mapping) for row in result]
+def search_scans_by_query(db, query):
+    from models import ScanResult
+    results = db.query(ScanResult).filter(
+        (ScanResult.title.ilike(f"%{query}%")) |
+        (ScanResult.description.ilike(f"%{query}%")) |
+        (ScanResult.cve_id.ilike(f"%{query}%"))
+    ).all()
+    return results
